@@ -177,10 +177,11 @@ impl<'a> ContextBuilder<'a> {
 
                 if let Some(code) = self.code_sections.get((index - num_imports) as usize) {
                     let operators: Vec<wasmparser::Operator<'a>> = code.get_operators_reader().expect("Could not get ops reader").into_iter().collect::<wasmparser::Result<Vec<wasmparser::Operator>>>().expect("ops");
-
+                    let mut iter = operators.into_iter();
                     func.statements = expression::statements_from_operators(
-                        operators,
-                        &funcs_copy
+                        &mut iter,
+                        &funcs_copy,
+                        None
                     ).unwrap();
                 }
             }

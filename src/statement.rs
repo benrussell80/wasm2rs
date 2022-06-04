@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use crate::expression::Expression;
 
 #[allow(dead_code)]
@@ -19,6 +20,12 @@ pub enum Statement {
     I64Store16(Expression, Expression, u8, u64),
     I64Store32(Expression, Expression, u8, u64),
     Drop(Expression),
+    Block(Vec<Statement>, u32),
+    BrIf {
+        cond: Expression,
+        block_depth: u32,
+        relative_depth: u32
+    },
 }
 
 impl Statement {
@@ -151,7 +158,19 @@ impl Statement {
             Self::Drop(expr) => format!(
                 "drop({});",
                 expr.emit_code(),
-            )
+            ),
+            Self::Block(stmts, depth) => {
+                let mut code = format!("'B{depth}: loop {{\n    ");
+                
+                code.push_str(&stmts.iter().map(|stmt| stmt.emit_code()).join("\n    "));
+
+                code.push_str("\n};\n");
+
+                code
+            }
+            Self::BrIf { cond, block_depth, relative_depth } => {
+                format!("if {} != 0 {{ break 'B{} }}", cond.emit_code(), block_depth - relative_depth)
+            }
         }
     }
 }

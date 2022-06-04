@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use crate::statement::Statement;
 use crate::context::FunctionKind;
-use wasmparser::{Operator};
+use wasmparser::{Operator, BlockType};
 use itertools::Itertools;
 
 
@@ -938,20 +938,47 @@ impl<'a> Expression {
     }
 }
 
-pub fn statements_from_operators<'a>(ops: Vec<Operator<'a>>, functions: &HashMap<u32, FunctionKind>) -> Result<Vec<Statement>, ParserError<'a>> {
+pub enum ParsingContext {
+    Block {
+        block_depth: u32
+    }
+}
+
+fn build_block_statement_empty_type<'a>(iter: &mut impl Iterator<Item=Operator<'a>>, functions: &HashMap<u32, FunctionKind>, block_depth: u32) -> Result<Statement, ParserError<'a>> {
+    Ok(Statement::Block(
+        statements_from_operators(iter, &functions, Some(ParsingContext::Block { block_depth }))?,
+        block_depth
+    ))
+}
+
+pub fn statements_from_operators<'a>(iter: &mut impl Iterator<Item=Operator<'a>>, functions: &HashMap<u32, FunctionKind>, parsing_context: Option<ParsingContext>) -> Result<Vec<Statement>, ParserError<'a>> {
     let mut exprs: Vec<Expression> = vec![];
     let mut stmts: Vec<Statement> = vec![];
-
-    let mut iter = ops.into_iter();
 
     loop {
         if let Some(op) = iter.next() {
             match op {
                 Operator::Unreachable => stmts.push(Statement::Unreachable),
                 Operator::Nop => stmts.push(Statement::Nop),
-                // Operator::Block {
-                //     ty,
-                // } => return Err(ParserError::Unimplemented),
+                Operator::Block {
+                    ty,
+                } => {
+                    match ty {
+                        BlockType::Empty => {
+                            stmts.push(build_block_statement_empty_type(
+                                iter,
+                                &functions,
+                                if let Some(ParsingContext::Block { block_depth }) = parsing_context { block_depth + 1 } else { 0 },
+                            )?);
+                        },
+                        BlockType::Type(_typ) => {
+                            return Err(ParserError::Unimplemented(op))
+                        },
+                        BlockType::FuncType(_index) => {
+                            return Err(ParserError::Unimplemented(op))
+                        },
+                    }
+                },
                 // Operator::Loop {
                 //     ty,
                 // } => return Err(ParserError::Unimplemented),
@@ -972,14 +999,27 @@ pub fn statements_from_operators<'a>(ops: Vec<Operator<'a>>, functions: &HashMap
                 //     relative_depth,
                 // } => return Err(ParserError::Unimplemented),
                 Operator::End => {
-                    continue
+                    match parsing_context {
+                        Some(ParsingContext::Block { .. }) | None => break,
+                        _ => return Err(ParserError::Invalid { statements: stmts.clone(), expressions: exprs.clone(), operator: op })
+                    }
                 },
                 // Operator::Br {
-                //     relative_depth: u32,
+                //     relative_depth,
                 // } => return Err(ParserError::Unimplemented),
-                // Operator::BrIf {
-                //     relative_depth: u32,
-                // } => return Err(ParserError::Unimplemented),
+                Operator::BrIf {
+                    relative_depth,
+                } => {
+                    if let Some(cond) = exprs.pop() {
+                        if let Some(ParsingContext::Block { block_depth }) = parsing_context {
+                            stmts.push(Statement::BrIf { cond, block_depth, relative_depth })
+                        } else {
+                            return Err(ParserError::Invalid { statements: stmts.clone(), expressions: exprs.clone(), operator: op })
+                        }
+                    } else {
+                        return Err(ParserError::Invalid { statements: stmts.clone(), expressions: exprs.clone(), operator: op })
+                    }
+                },
                 // Operator::BrTable {
                 //     table,
                 // } => return Err(ParserError::Unimplemented),
@@ -3569,12 +3609,13 @@ pub fn statements_from_operators<'a>(ops: Vec<Operator<'a>>, functions: &HashMap
                 o => return Err(ParserError::<'a>::Unimplemented(o))
             }
         } else {
-            if exprs.len() == 1 {
-                if let Some(expr) = exprs.pop() {
-                    stmts.push(Statement::Unassigned(expr))
-                }
-            }
             break
+        }
+    }
+
+    if exprs.len() == 1 {
+        if let Some(expr) = exprs.pop() {
+            stmts.push(Statement::Unassigned(expr))
         }
     }
 
