@@ -107,7 +107,6 @@ rustc decompiled.rs --target wasm32-unknown-unknown -o decompiled.wasm -O
 Only a subset of all WASM opcodes are supported for decompilation. Some common WASM opcodes not yet supported include:
 - loop
 - if else
-- br
 
 If a binary contains an unsupported opcode then wasm2rs will not be able to decompile the binary. Contributions to this end are encouraged.
 

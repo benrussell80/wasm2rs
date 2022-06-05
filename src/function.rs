@@ -9,7 +9,7 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 pub struct Function {
     pub index: u32,
     pub ty: FuncType,
-    pub locals: Vec<WASMType>,
+    pub locals: Vec<(u32, WASMType)>,
     pub type_index: u32,
     pub statements: Vec<Statement>,
     pub exported: bool,
@@ -94,16 +94,30 @@ impl Function {
         let param_len = self.ty.params.len();
 
         code.push_str(
-            &self.locals.iter().enumerate().map(|(i, _)| {
-                format!("mut p{}", i + param_len)
-            }).join(", ")
+            &self.locals.iter().map(|(count, _)| {
+                (0..*count).into_iter()
+            })
+            .flatten()
+            .enumerate()
+            .map(|(i, _)| format!("mut p{}", i + param_len))
+            .join(", ")
         );
+
+        // code.push_str(
+        //     &self.locals.iter().map(|(count, _)| {
+        //         (0..*count).map(|_| {
+        //             format!("mut p{}", i + param_len)
+        //         }).join(", ")
+        //     }).join(", ")
+        // );
 
         code.push_str("): (");
 
         code.push_str(
-            &self.locals.iter().map(|local| {
-                format!("{}", local)
+            &self.locals.iter().map(|(count, ty)| {
+                (0..*count).map(|_| {
+                    format!("{}", ty)
+                }).join(", ")
             }).join(", ")
         );
 

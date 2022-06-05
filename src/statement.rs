@@ -26,6 +26,16 @@ pub enum Statement {
         block_depth: u32,
         relative_depth: u32
     },
+    Br {
+        block_depth: u32,
+        relative_depth: u32
+    },
+    BrTable {
+        cond: Expression,
+        block_depth: u32,
+        table: Vec<u32>,
+        default: u32,
+    }
 }
 
 impl Statement {
@@ -164,12 +174,28 @@ impl Statement {
                 
                 code.push_str(&stmts.iter().map(|stmt| stmt.emit_code()).join("\n    "));
 
-                code.push_str("\n};\n");
+                code.push_str("\n    break\n};\n");
 
                 code
-            }
+            },
             Self::BrIf { cond, block_depth, relative_depth } => {
                 format!("if {} != 0 {{ break 'B{} }}", cond.emit_code(), block_depth - relative_depth)
+            },
+            Self::Br { block_depth, relative_depth } => {
+                format!("break 'B{};", block_depth - relative_depth)
+            },
+            Self::BrTable { cond, block_depth, table, default } => {
+                let mut code = format!("match {} {{\n", cond.emit_code());
+
+                code.push_str(&table.iter().enumerate().map(|(i, relative_depth)| {
+                    format!("{i} => break 'B{},", block_depth - relative_depth)
+                }).join("\n"));
+
+                code.push_str(&format!("\n_ => break 'B{},\n", block_depth - default));
+
+                code.push_str("}");
+
+                code
             }
         }
     }

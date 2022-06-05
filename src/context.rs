@@ -131,7 +131,7 @@ impl<'a> ContextBuilder<'a> {
                                 type_index: func_type_index,
                                 index: func_index,
                                 ty: ft.clone(),
-                                locals: locals.into_iter().map(|(_, t)| t.into()).collect(),
+                                locals: locals.into_iter().map(|(count, t)| (count, t.into())).collect(),
                                 statements: vec![],
                                 exported: false,
                                 export_name: None,

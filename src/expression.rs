@@ -1004,9 +1004,15 @@ pub fn statements_from_operators<'a>(iter: &mut impl Iterator<Item=Operator<'a>>
                         _ => return Err(ParserError::Invalid { statements: stmts.clone(), expressions: exprs.clone(), operator: op })
                     }
                 },
-                // Operator::Br {
-                //     relative_depth,
-                // } => return Err(ParserError::Unimplemented),
+                Operator::Br {
+                    relative_depth,
+                } => {
+                    if let Some(ParsingContext::Block { block_depth }) = parsing_context {
+                        stmts.push(Statement::Br { block_depth, relative_depth })
+                    } else {
+                        return Err(ParserError::Invalid { statements: stmts.clone(), expressions: exprs.clone(), operator: op })
+                    }
+                },
                 Operator::BrIf {
                     relative_depth,
                 } => {
@@ -1020,9 +1026,22 @@ pub fn statements_from_operators<'a>(iter: &mut impl Iterator<Item=Operator<'a>>
                         return Err(ParserError::Invalid { statements: stmts.clone(), expressions: exprs.clone(), operator: op })
                     }
                 },
-                // Operator::BrTable {
-                //     table,
-                // } => return Err(ParserError::Unimplemented),
+                Operator::BrTable {
+                    ref table,
+                } => {
+                    if let Some(cond) = exprs.pop() {
+                        if let Some(ParsingContext::Block { block_depth }) = parsing_context {
+                            stmts.push(Statement::BrTable {
+                                cond,
+                                block_depth,
+                                table: table.targets().collect::<Result<_, _>>().unwrap(),
+                                default: table.default()
+                            })
+                        }
+                    } else {
+                        return Err(ParserError::Invalid { statements: stmts, expressions: exprs, operator: op })
+                    }
+                },
                 Operator::Return => {
                     if let Some(expr) = exprs.pop() {
                         stmts.push(Statement::Return(expr))
