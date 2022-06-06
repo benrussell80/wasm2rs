@@ -28,59 +28,63 @@ impl Display for Function {
 }
 
 impl Function {
-    pub fn emit_code(&self) -> String {
-        let mut code = String::new();
+    pub fn emit_code(&self, indentation: usize) -> Vec<String> {
+        let mut lines = vec![];
 
-        code.push_str(&self.emit_help_text());
+        lines.extend(self.emit_help_text());
 
-        code.push_str(&self.emit_signature());
+        lines.extend(self.emit_signature());
 
-        code.push_str(&self.emit_body());
+        lines.extend(self.emit_body(indentation));
 
-        code.push('\n');
+        lines.push("}".to_string());
 
-        code
+        lines
     }
 
-    fn emit_help_text(&self) -> String {
+    fn emit_help_text(&self) -> Vec<String> {
         if let Some(ref dnm) = self.debug_name {
-            format!("/// Debug name: {}\n", dnm)
+            vec![format!("/// Debug name: {}", dnm)]
         } else {
-            "".to_string()
+            vec!["".to_string()]
         }
     }
 
-    fn emit_signature(&self) -> String {
+    fn emit_signature(&self) -> Vec<String> {
+        let mut lines = Vec::new();
+
         let return_sig = match self.ty.returns.len() {
             0 => "".to_string(),
             1 => {
-                format!("-> {}", &self.ty.returns[0])
+                format!(" -> {}", &self.ty.returns[0])
             },
             _ => unimplemented!()
         };
 
-        format!(
-            "{}unsafe fn {}({}) {} ",
-            if self.exported { "#[no_mangle]\n" } else { "" },
+        if self.exported {
+            lines.push("#[no_mangle]".to_string());
+        }
+
+        lines.push(format!(
+            "unsafe fn {}({}){} {{",
             self,
             self.emit_param_types(),
             return_sig
-        )
+        ));
+
+        lines
     }
 
-    fn emit_body(&self) -> String {
-        let mut code = String::from("{\n");
-
-        // indentation would be great
+    fn emit_body(&self, indentation: usize) -> Vec<String> {
+        let mut lines = vec![];
+        
         if self.locals.len() > 0 {
-            code.push_str(&self.emit_locals());
+            lines.push(self.emit_locals(indentation));
         }
 
-        code.push_str(&self.emit_statements());
+        lines.extend(self.emit_statements(indentation));
 
-        code.push_str("\n}\n");
-
-        code
+        lines
     }
 
     fn emit_param_types(&self) -> String {
@@ -89,8 +93,8 @@ impl Function {
         }).join(", ")
     }
 
-    fn emit_locals(&self) -> String {
-        let mut code = "    let (".to_string();
+    fn emit_locals(&self, indentation: usize) -> String {
+        let mut code = format!("{:indentation$}let (", " ");
         let param_len = self.ty.params.len();
 
         code.push_str(
@@ -103,14 +107,6 @@ impl Function {
             .join(", ")
         );
 
-        // code.push_str(
-        //     &self.locals.iter().map(|(count, _)| {
-        //         (0..*count).map(|_| {
-        //             format!("mut p{}", i + param_len)
-        //         }).join(", ")
-        //     }).join(", ")
-        // );
-
         code.push_str("): (");
 
         code.push_str(
@@ -121,16 +117,14 @@ impl Function {
             }).join(", ")
         );
 
-        code.push_str(");\n");
+        code.push_str(");");
 
         code
     }
 
-    fn emit_statements(&self) -> String {
+    fn emit_statements(&self, indentation: usize) -> Vec<String> {
         self.statements.iter().map(|stmt| {
-            let mut code = "    ".to_string();
-            code.push_str(&stmt.emit_code());
-            code
-        }).join("\n")
+            stmt.emit_code(indentation)
+        }).flatten().collect()
     }
 }

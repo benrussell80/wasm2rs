@@ -15,13 +15,13 @@ fn main() {
     
             let context = parse(&buffer);
     
-            println!("{}", context.emit_code());
+            println!("{}", context.emit_code().join("\n"));
         } else {
             let content = fs::read(filename).expect("Unable to read file");
     
             let context = parse(&content);
     
-            println!("{}", context.emit_code());
+            println!("{}", context.emit_code().join("\n"));
         };
     } else {
         panic!("Missing WASM file path or \"-\" for reading from stdin.")

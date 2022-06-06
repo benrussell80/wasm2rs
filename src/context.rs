@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::function::Function;
 use crate::func_type::FuncType;
 use crate::expression;
+use crate::statement::INDENTATION;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 
@@ -30,11 +31,11 @@ impl Context {
         ContextBuilder::new()
     }
 
-    pub fn emit_code(&self) -> String {
-        let mut code = String::new();
+    pub fn emit_code(&self) -> Vec<String> {
+        let mut lines = Vec::new();
 
         // emit no_main; this may change once the start section is supported
-        code.push_str("#![no_main]\n\n");
+        lines.push("#![no_main]".to_string());
 
         // group imports by module
         self.functions
@@ -47,9 +48,13 @@ impl Context {
             })
             .iter()
             .for_each(|(module, functions)| {
-                code.push_str(&format!("#[link(wasm_import_module=\"{module}\")]\nextern {{\n"));
-                code.push_str(&functions.iter().map(|func| func.emit_code()).join("\n"));
-                code.push_str("}\n\n");
+                lines.push(format!("#[link(wasm_import_module=\"{module}\")]"));
+                lines.push("extern {".to_string());
+                for func in functions {
+                    lines.extend(func.emit_code())
+                }
+                // code.push(functions.iter().map(|func| func.emit_code()).join("\n"));
+                lines.push("}".to_string());
             });
 
         // emit functions
@@ -58,11 +63,11 @@ impl Context {
             .filter(|(_, fk)| matches!(fk, FunctionKind::Defined(_)))
             .for_each(|(_, fk)| {
                 if let FunctionKind::Defined(func) = fk {
-                    code.push_str(&func.emit_code());
+                    lines.extend(func.emit_code(INDENTATION));
                 }
             });
 
-        code
+        lines
     }
 }
 
@@ -229,15 +234,15 @@ pub struct ImportedFunction {
 }
 
 impl ImportedFunction {
-    pub fn emit_code(&self) -> String {
-        let mut code = String::new();
+    pub fn emit_code(&self) -> Vec<String> {
+        let mut code = Vec::new();
 
-        code.push_str(&self.emit_signature());
+        code.push(self.emit_signature(INDENTATION));
 
         code
     }
 
-    fn emit_signature(&self) -> String {
+    fn emit_signature(&self, indentation: usize) -> String {
         let return_sig = match self.ty.returns.len() {
             0 => "".to_string(),
             1 => {
@@ -247,7 +252,8 @@ impl ImportedFunction {
         };
 
         format!(
-            "    #[link_name=\"{}\"]\n    fn {}({}) {};\n",
+            "{:>indentation$}#[link_name=\"{}\"]\n    fn {}({}) {};",
+            " ",
             self.name,
             self,
             self.emit_param_types(),
