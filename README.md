@@ -107,7 +107,29 @@ rustc decompiled.rs --target wasm32-unknown-unknown -o decompiled.wasm -O
 Only a subset of all WASM opcodes are supported for decompilation. Some common WASM opcodes not yet supported include:
 - loop
 - if else
+- global get/set
 
 If a binary contains an unsupported opcode then wasm2rs will not be able to decompile the binary. Contributions to this end are encouraged.
 
-Additionally, handling of globals, data, and table elements is not yet supported.
+Additionally, handling of globals and table elements is not yet supported.
+
+Data sections are supported, albeit in a convoluted way. If one or more data sections is present (or if the number of initial pages in the memory section is greater than 16), then the decompiler will emit an exported `setup` function. This function handles cases where static pointers to data are embedded into function code. Without the `setup` function, calling such pointer-using functions will result in an out of bounds memory access, in the best case. This is a workaround of the fact that it is not possible to set the address a of static value in Rust.
+
+For an example of this behavior, use the decompiler on the WASM binary created by the `f32::powf` function below.
+
+1. Compile this program
+```rs
+#![no_main]
+
+#[no_mangle]
+fn pow(x: f32, y: f32) -> f32 {
+    x.powf(y)
+}
+```
+2. Decompile the resulting WASM binary
+3. Compile the resulting Rust source file to WASM
+4. Import the module into your favorite WASM runtime
+5. Call `pow` before calling `setup`
+6. Call `pow` after calling `setup`
+
+Step 5 should result in a trap.
