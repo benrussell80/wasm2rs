@@ -15,14 +15,12 @@ pub fn parse(data: &[u8]) -> Context {
                 Payload::ImportSection(imports) => c = c.set_imports(imports),
                 Payload::CodeSectionEntry(body) => c = c.add_code_section(body),
                 Payload::TableSection(_) => {},
-                Payload::MemorySection(_) => {},
+                Payload::MemorySection(memory) => c = c.set_memory(memory),
                 Payload::GlobalSection(_) => {},
                 Payload::ExportSection(exports) => c = c.set_exports(exports),
-                Payload::StartSection { func, .. } => {
-                    println!("Start Function is: {func}")
-                },
+                Payload::StartSection { .. } => {},
                 Payload::DataCountSection { .. } => {},
-                Payload::DataSection(_) => {}
+                Payload::DataSection(reader) => c = c.add_data_section(reader),
                 Payload::ElementSection(_) => {}
                 Payload::CustomSection(_)
                 | Payload::Version { .. }

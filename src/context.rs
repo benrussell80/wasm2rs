@@ -2,15 +2,17 @@ use itertools::Itertools;
 use std::collections::HashMap;
 use crate::function::Function;
 use crate::func_type::FuncType;
-use crate::expression;
-use crate::statement::INDENTATION;
+use crate::expression::{self, Expression};
+use crate::statement::{INDENTATION, Statement};
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 
 #[derive(Debug, Clone)]
 pub struct Context {
     pub functions: HashMap<u32, FunctionKind>,
-    pub types: HashMap<u32, FuncType>
+    pub types: HashMap<u32, FuncType>,
+    pub memory_size: usize,
+    pub data: Vec<(i32, Vec<u8>)>
 }
 
 #[derive(Default, Clone)]
@@ -20,6 +22,8 @@ pub struct ContextBuilder<'cb_lt> {
     funcs: Option<wasmparser::FunctionSectionReader<'cb_lt>>,
     code_sections: Vec<wasmparser::FunctionBody<'cb_lt>>,
     exports: Option<wasmparser::ExportSectionReader<'cb_lt>>,
+    memory: Option<wasmparser::MemorySectionReader<'cb_lt>>,
+    data: Vec<wasmparser::DataSectionReader<'cb_lt>>,
 }
 
 impl Context {
@@ -36,6 +40,9 @@ impl Context {
 
         // emit no_main; this may change once the start section is supported
         lines.push("#![no_main]".to_string());
+
+        // emit "setup" function
+        lines.extend(self.emit_setup_function());
 
         // group imports by module
         self.functions
@@ -69,6 +76,52 @@ impl Context {
 
         lines
     }
+
+    fn emit_setup_function(&self) -> Vec<String> {
+        use Statement::*;
+        use Expression::*;
+
+        // how many pages do we need to start?
+        let mut statements = vec![if let Some(furthest_index) = self.data.iter().map(|(index, bytes)| *index as usize + bytes.len()).max() {
+            let extra_pages_needed = (furthest_index / (1 << 16)) + 1;
+            Drop(MemoryGrow(Box::new(
+                I32Sub(
+                    Box::new(I32Const(extra_pages_needed as _)),
+                    Box::new(MemorySize),
+                )
+            )))
+        } else {
+            Statement::Nop
+        }];
+
+        for (i, (index, bytes)) in self.data.iter().enumerate() {
+            let mut lines = Vec::new();
+
+            let byte_len = bytes.len();
+
+            lines.push(format!("let g{i} = ::std::ptr::slice_from_raw_parts_mut({index} as *mut u8, {byte_len});"));
+            lines.push(format!("for (i, byte) in {bytes:?}.iter().enumerate() {{"));
+            lines.push(format!("{:INDENTATION$}(*g{i})[i] = *byte;", " "));
+            lines.push("}".to_string());
+
+            statements.push(RawRust(lines));
+        }
+
+        let f = Function {
+            index: u32::MAX,
+            ty: FuncType {
+                params: vec![],
+                returns: vec![],
+            },
+            locals: vec![],
+            statements,
+            exported: true,
+            export_name: Some("setup".to_string()),
+            debug_name: None,
+        };
+
+        f.emit_code(INDENTATION)
+    }
 }
 
 impl<'a> ContextBuilder<'a> {
@@ -76,7 +129,7 @@ impl<'a> ContextBuilder<'a> {
         Default::default()
     }
 
-    pub fn build(self) -> Context {
+    pub fn build(mut self) -> Context {
         let mut ty_index = 0;
         let mut types: HashMap<u32, FuncType> = HashMap::new();
         let mut func_index = 0;
@@ -110,7 +163,6 @@ impl<'a> ContextBuilder<'a> {
                                     index: func_index,
                                     name: name.to_string(),
                                     module: module.to_string(),
-                                    type_index: ty,
                                     ty: ft.clone()
                                 })
                             );
@@ -133,7 +185,6 @@ impl<'a> ContextBuilder<'a> {
                             let locals = code.get_locals_reader().expect("Could not get locals reader").into_iter().collect::<wasmparser::Result<Vec<(u32, wasmparser::Type)>>>().expect("locals");
         
                             let func = Function {
-                                type_index: func_type_index,
                                 index: func_index,
                                 ty: ft.clone(),
                                 locals: locals.into_iter().map(|(count, t)| (count, t.into())).collect(),
@@ -192,9 +243,34 @@ impl<'a> ContextBuilder<'a> {
             }
         }
 
+        // memory; add exported "setup" function to context
+        let memory_size;  // this seems to be the default amount for Rust programs
+
+        if let Some(mut memory) = self.memory {
+            memory_size = memory.read().expect("memory type").initial as usize;
+        } else {
+            memory_size = 16;
+        }
+
+        // data sections
+        let mut data = Vec::new();
+
+        for datum in self.data.iter_mut() {
+            if let Ok(wasmparser::Data { kind: wasmparser::DataKind::Active { memory_index: 0, init_expr }, data: d, .. }) = datum.read() {
+                let mut opreader = init_expr.get_operators_reader();
+                let index = opreader.read();
+                let end = opreader.read();
+                if let (Ok(wasmparser::Operator::I32Const { value }), Ok(wasmparser::Operator::End)) = (index, end) {
+                    data.push((value, d.into()))
+                }
+            }
+        }
+
         Context {
             functions,
             types,
+            memory_size,
+            data
         }
     }
 
@@ -222,13 +298,22 @@ impl<'a> ContextBuilder<'a> {
         self.exports = Some(exports);
         self
     }
+
+    pub fn set_memory(mut self, memory: wasmparser::MemorySectionReader<'a>) -> Self {
+        self.memory = Some(memory);
+        self
+    }
+
+    pub fn add_data_section(mut self, data_section: wasmparser::DataSectionReader<'a>) -> Self {
+        self.data.push(data_section);
+        self
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct ImportedFunction {
     pub index: u32,
     pub ty: FuncType,
-    pub type_index: u32,
     pub module: String,
     pub name: String,
 }

@@ -160,6 +160,8 @@ pub enum Expression {
     I64Const(i64),  // or u64?
     F32Const(u32),
     F64Const(u64),
+    MemoryGrow(Box<Expression>),
+    MemorySize,
 }
 
 impl<'a> Expression {
@@ -172,7 +174,7 @@ impl<'a> Expression {
                 cond.emit_code()
             ),
             Self::LocalGet(name) => format!(
-                "({})",
+                "{}",
                 name
             ),
             Self::LocalTee(name, expr) => format!(
@@ -183,7 +185,7 @@ impl<'a> Expression {
             ),
             // Self::IfElse(Box<Expression>, Box<Expression>),
             Self::Call(func, args) => format!(
-                "({}({}))",
+                "{}({})",
                 func,
                 args.iter().map(|arg| arg.emit_code()).join(",")
             ),
@@ -196,9 +198,9 @@ impl<'a> Expression {
                 };
                 let expr_code = expr.emit_code();
                 if *offset == 0 {
-                    format!("(({expr_code} as *const i32).{method}())")
+                    format!("({expr_code} as *const i32).{method}()")
                 } else {
-                    format!("(({expr_code} as *const i32).cast::<u8>().add({offset}).cast::<i32>().{method}())")
+                    format!("({expr_code} as *const i32).cast::<u8>().add({offset}).cast::<i32>().{method}()")
                 }
             },
             Self::I64Load(expr, align, offset) => {
@@ -210,9 +212,9 @@ impl<'a> Expression {
                 let expr_code = expr.emit_code();
 
                 if *offset == 0 {
-                    format!("(({expr_code} as *const i64).{method}())")
+                    format!("({expr_code} as *const i64).{method}()")
                 } else {
-                    format!("(({expr_code} as *const i64).cast::<u8>().add({offset}).cast::<i64>().{method}())")
+                    format!("({expr_code} as *const i64).cast::<u8>().add({offset}).cast::<i64>().{method}()")
                 }
             },
             Self::F32Load(expr, align, offset) => {
@@ -224,9 +226,9 @@ impl<'a> Expression {
                 let expr_code = expr.emit_code();
 
                 if *offset == 0 {
-                    format!("(({expr_code} as *const f32).{method}())")
+                    format!("({expr_code} as *const f32).{method}()")
                 } else {
-                    format!("(({expr_code} as *const f32).cast::<u8>().add({offset}).cast::<f32>().{method}())")
+                    format!("({expr_code} as *const f32).cast::<u8>().add({offset}).cast::<f32>().{method}()")
                 }
             },
             Self::F64Load(expr, align, offset) => {
@@ -238,9 +240,9 @@ impl<'a> Expression {
                 let expr_code = expr.emit_code();
 
                 if *offset == 0 {
-                    format!("(({expr_code} as *const f64).{method}())")
+                    format!("({expr_code} as *const f64).{method}()")
                 } else {
-                    format!("(({expr_code} as *const f64).cast::<u8>().add({offset}).cast::<f64>().{method}())")
+                    format!("({expr_code} as *const f64).cast::<u8>().add({offset}).cast::<f64>().{method}()")
                 }
             },
             Self::I32Load8S(expr, _, offset) => {
@@ -536,15 +538,15 @@ impl<'a> Expression {
                 expr2.emit_code(),
             ),
             Self::I32Clz(expr) => format!(
-                "({}.leading_zeros())",
+                "{}.leading_zeros()",
                 expr.emit_code(),
             ),
             Self::I32Ctz(expr) => format!(
-                "({}.trailing_zeros())",
+                "{}.trailing_zeros()",
                 expr.emit_code(),
             ),
             Self::I32Popcnt(expr) => format!(
-                "({}.count_ones())",
+                "{}.count_ones()",
                 expr.emit_code(),
             ),
             Self::I32Add(expr1, expr2) => format!(
@@ -613,12 +615,12 @@ impl<'a> Expression {
                 expr2.emit_code(),
             ),
             Self::I32Rotl(expr1, expr2) => format!(
-                "({}.rotate_left({} as u32))",
+                "{}.rotate_left({} as u32)",
                 expr1.emit_code(),
                 expr2.emit_code(),
             ),
             Self::I32Rotr(expr1, expr2) => format!(
-                "({}.rotate_right({} as u32))",
+                "{}.rotate_right({} as u32)",
                 expr1.emit_code(),
                 expr2.emit_code(),
             ),
@@ -700,17 +702,17 @@ impl<'a> Expression {
                 expr2.emit_code(),
             ),
             Self::I64Rotl(expr1, expr2) => format!(
-                "({}.rotate_left({} as u32))",
+                "{}.rotate_left({} as u32)",
                 expr1.emit_code(),
                 expr2.emit_code(),
             ),
             Self::I64Rotr(expr1, expr2) => format!(
-                "({}.rotate_right({} as u32))",
+                "{}.rotate_right({} as u32)",
                 expr1.emit_code(),
                 expr2.emit_code(),
             ),
             Self::F32Abs(expr) => format!(
-                "({}.abs())",
+                "{}.abs()",
                 expr.emit_code(),
             ),
             Self::F32Neg(expr) => format!(
@@ -718,23 +720,23 @@ impl<'a> Expression {
                 expr.emit_code(),
             ),
             Self::F32Ceil(expr) => format!(
-                "({}.ceil())",
+                "{}.ceil()",
                 expr.emit_code(),
             ),
             Self::F32Floor(expr) => format!(
-                "({}.floor())",
+                "{}.floor()",
                 expr.emit_code(),
             ),
             Self::F32Trunc(expr) => format!(
-                "({}.trunc())",
+                "{}.trunc()",
                 expr.emit_code(),
             ),
             Self::F32Nearest(expr) => format!(
-                "({}.round())",
+                "{}.round()",
                 expr.emit_code(),
             ),
             Self::F32Sqrt(expr) => format!(
-                "({}.sqrt())",
+                "{}.sqrt()",
                 expr.emit_code(),
             ),
             Self::F32Add(expr1, expr2) => format!(
@@ -766,12 +768,12 @@ impl<'a> Expression {
             //     expr.emit_code(),
             // ),
             Self::F32Copysign(expr1, expr2) => format!(
-                "({}.copysign({}))",
+                "{}.copysign({})",
                 expr1.emit_code(),
                 expr2.emit_code(),
             ),
             Self::F64Abs(expr) => format!(
-                "({}.abs())",
+                "{}.abs()",
                 expr.emit_code(),
             ),
             Self::F64Neg(expr) => format!(
@@ -779,23 +781,23 @@ impl<'a> Expression {
                 expr.emit_code(),
             ),
             Self::F64Ceil(expr) => format!(
-                "({}.ceil())",
+                "{}.ceil()",
                 expr.emit_code(),
             ),
             Self::F64Floor(expr) => format!(
-                "({}.floor())",
+                "{}.floor()",
                 expr.emit_code(),
             ),
             Self::F64Trunc(expr) => format!(
-                "({}.trunc())",
+                "{}.trunc()",
                 expr.emit_code(),
             ),
             Self::F64Nearest(expr) => format!(
-                "({}.round())",
+                "{}.round()",
                 expr.emit_code(),
             ),
             Self::F64Sqrt(expr) => format!(
-                "({}.sqrt())",
+                "{}.sqrt()",
                 expr.emit_code(),
             ),
             Self::F64Add(expr1, expr2) => format!(
@@ -827,7 +829,7 @@ impl<'a> Expression {
             //     expr.emit_code(),
             // ),
             Self::F64Copysign(expr1, expr2) => format!(
-                "({}.copysign({}))",
+                "{}.copysign({})",
                 expr1.emit_code(),
                 expr2.emit_code(),
             ),
@@ -836,7 +838,7 @@ impl<'a> Expression {
                 expr.emit_code(),
             ),
             Self::I32TruncF32S(expr) => format!(
-                "({}.to_int_unchecked::<i32>())",
+                "{}.to_int_unchecked::<i32>()",
                 expr.emit_code(),
             ),
             Self::I32TruncF32U(expr) => format!(
@@ -844,7 +846,7 @@ impl<'a> Expression {
                 expr.emit_code(),
             ),
             Self::I32TruncF64S(expr) => format!(
-                "({}.to_int_unchecked::<i32>())",
+                "{}.to_int_unchecked::<i32>()",
                 expr.emit_code(),
             ),
             Self::I32TruncF64U(expr) => format!(
@@ -856,11 +858,11 @@ impl<'a> Expression {
                 expr.emit_code(),
             ),
             Self::I64ExtendI32U(expr) => format!(
-                "(({} as u64) as i64)",
+                "({} as u64 as i64)",
                 expr.emit_code(),
             ),
             Self::I64TruncF32S(expr) => format!(
-                "({}.to_int_unchecked::<i32>())",
+                "{}.to_int_unchecked::<i32>()",
                 expr.emit_code(),
             ),
             Self::I64TruncF32U(expr) => format!(
@@ -868,7 +870,7 @@ impl<'a> Expression {
                 expr.emit_code(),
             ),
             Self::I64TruncF64S(expr) => format!(
-                "({}.to_int_unchecked::<i32>())",
+                "{}.to_int_unchecked::<i32>()",
                 expr.emit_code(),
             ),
             Self::I64TruncF64U(expr) => format!(
@@ -892,36 +894,43 @@ impl<'a> Expression {
                 expr.emit_code(),
             ),
             Self::I32ReinterpretF32(expr) => format!(
-                "(::std::mem::transmute::<f32, i32>({}))",
+                "::std::mem::transmute::<f32, i32>({})",
                 expr.emit_code(),
             ),
             Self::I64ReinterpretF64(expr) => format!(
-                "(::std::mem::transmute::<f64, i64>({}))",
+                "::std::mem::transmute::<f64, i64>({})",
                 expr.emit_code(),
             ),
             Self::F32ReinterpretI32(expr) => format!(
-                "(::std::mem::transmute::<i32, f32>({}))",
+                "::std::mem::transmute::<i32, f32>({})",
                 expr.emit_code(),
             ),
             Self::F64ReinterpretI64(expr) => format!(
-                "(::std::mem::transmute::<i64, f64>({}))",
+                "::std::mem::transmute::<i64, f64>({})",
                 expr.emit_code(),
             ),
             Self::I32Const(num) => format!(
-                "({}i32)",
+                "{}i32",
                 num
             ),  // or u32?
             Self::I64Const(num) => format!(
-                "({}i64)",
+                "{}i64",
                 num
             ),  // or u64?
             Self::F32Const(num) => format!(
-                "(f32::from_bits({}))",
+                "f32::from_bits({})",
                 num
             ),
             Self::F64Const(num) => format!(
-                "(f64::from_bits({}))",
+                "f64::from_bits({})",
                 num
+            ),
+            Self::MemoryGrow(delta) => format!(
+                "(::std::arch::wasm32::memory_grow(0, {} as _) as i32)",
+                delta.emit_code()
+            ),
+            Self::MemorySize => format!(
+                "(::std::arch::wasm32::memory_size(0) as i32)"
             ),
             Self::I32Extend8S(_) => unimplemented!(),
             Self::I32Extend16S(_) => unimplemented!(),
@@ -951,6 +960,13 @@ fn build_block_statement_empty_type<'a>(iter: &mut impl Iterator<Item=Operator<'
     ))
 }
 
+// fn build_loop_statement_empty_type<'a>(iter: &mut impl Iterator<Item=Operator<'a>>, functions: &HashMap<u32, FunctionKind>, block_depth: u32) -> Result<Statement, ParserError<'a>> {
+//     Ok(Statement::Block(
+//         statements_from_operators(iter, &functions, Some(ParsingContext::Block { block_depth }))?,
+//         block_depth
+//     ))
+// }
+
 pub fn statements_from_operators<'a>(iter: &mut impl Iterator<Item=Operator<'a>>, functions: &HashMap<u32, FunctionKind>, parsing_context: Option<ParsingContext>) -> Result<Vec<Statement>, ParserError<'a>> {
     let mut exprs: Vec<Expression> = vec![];
     let mut stmts: Vec<Statement> = vec![];
@@ -979,9 +995,9 @@ pub fn statements_from_operators<'a>(iter: &mut impl Iterator<Item=Operator<'a>>
                         },
                     }
                 },
-                // Operator::Loop {
-                //     ty,
-                // } => return Err(ParserError::Unimplemented),
+                Operator::Loop {
+                    ..
+                } => return Err(ParserError::Unimplemented(op)),
                 // Operator::If {
                 //     ty,
                 // } => return Err(ParserError::Unimplemented),
@@ -1001,7 +1017,7 @@ pub fn statements_from_operators<'a>(iter: &mut impl Iterator<Item=Operator<'a>>
                 Operator::End => {
                     match parsing_context {
                         Some(ParsingContext::Block { .. }) | None => break,
-                        _ => return Err(ParserError::Invalid { statements: stmts.clone(), expressions: exprs.clone(), operator: op })
+                        // _ => return Err(ParserError::Invalid { statements: stmts.clone(), expressions: exprs.clone(), operator: op })
                     }
                 },
                 Operator::Br {
@@ -1375,14 +1391,20 @@ pub fn statements_from_operators<'a>(iter: &mut impl Iterator<Item=Operator<'a>>
                         _ => return Err(ParserError::Invalid { statements: stmts. clone(), expressions: exprs.clone(), operator: op })
                     }
                 },
-                // Operator::MemorySize {
-                //     mem,
-                //     mem_byte,
-                // } => return Err(ParserError::Unimplemented),
-                // Operator::MemoryGrow {
-                //     mem,
-                //     mem_byte,
-                // } => return Err(ParserError::Unimplemented),
+                Operator::MemorySize {
+                    ..
+                } => {
+                    exprs.push(Expression::MemorySize)
+                },
+                Operator::MemoryGrow {
+                    ..
+                } => {
+                    if let Some(delta) = exprs.pop() {
+                        exprs.push(Expression::MemoryGrow(Box::new(delta)))
+                    } else {
+                        return Err(ParserError::Invalid { statements: stmts.clone(), expressions: exprs.clone(), operator: op })
+                    }
+                },
                 Operator::I32Const {
                     value,
                 } => {

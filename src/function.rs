@@ -10,7 +10,6 @@ pub struct Function {
     pub index: u32,
     pub ty: FuncType,
     pub locals: Vec<(u32, WASMType)>,
-    pub type_index: u32,
     pub statements: Vec<Statement>,
     pub exported: bool,
     pub export_name: Option<String>,

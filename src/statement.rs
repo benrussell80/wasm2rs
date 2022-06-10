@@ -1,4 +1,3 @@
-use itertools::Itertools;
 use crate::expression::Expression;
 
 #[allow(dead_code)]
@@ -36,7 +35,8 @@ pub enum Statement {
         block_depth: u32,
         table: Vec<u32>,
         default: u32,
-    }
+    },
+    RawRust(Vec<String>),
 }
 
 // add support for indentation
@@ -214,6 +214,11 @@ impl Statement {
                 lines.push(format!("{:indentation$}_ => break 'B{},", " ", block_depth - default));
 
                 lines.push(format!("{:indentation$}}}", " "));
+            },
+            Self::RawRust(raw_lines) => {
+                for raw_line in raw_lines.iter() {
+                    lines.push(format!("{:indentation$}{}", " ", raw_line));
+                }
             }
         };
         lines
