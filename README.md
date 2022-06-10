@@ -113,9 +113,9 @@ If a binary contains an unsupported opcode then wasm2rs will not be able to deco
 
 Additionally, handling of globals and table elements is not yet supported.
 
-Data sections are supported, albeit in a convoluted way. If one or more data sections is present (or if the number of initial pages in the memory section is greater than 16), then the decompiler will emit an exported `setup` function. This function handles cases where static pointers to data are embedded into function code. Without the `setup` function, calling such pointer-using functions will result in an out of bounds memory access, in the best case. This is a workaround of the fact that it is not possible to set the address a of static value in Rust.
+Data sections are supported, albeit in a convoluted way. If one or more data sections is present (or if the number of initial pages in the memory section is greater than 16), then the decompiler will emit an exported `setup` function. This function handles cases where static pointers to data are embedded into function code. Without the `setup` function, calling such pointer-using functions will result in an out of bounds memory access, in the best case. Using the `setup` function approach is a workaround of the fact that it is not possible to set the address a of static value in Rust.
 
-For an example of this behavior, use the decompiler on the WASM binary created by the `f32::powf` function below.
+For an example of this behavior, follow the steps below:
 
 1. Compile this program
 ```rs
