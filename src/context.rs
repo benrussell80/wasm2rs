@@ -244,12 +244,12 @@ impl<'a> ContextBuilder<'a> {
         }
 
         // memory; add exported "setup" function to context
-        let memory_size;  // this seems to be the default amount for Rust programs
+        let memory_size;
 
         if let Some(mut memory) = self.memory {
             memory_size = memory.read().expect("memory type").initial as usize;
         } else {
-            memory_size = 16;
+            memory_size = 16;  // this seems to be the default amount for Rust programs
         }
 
         // data sections
