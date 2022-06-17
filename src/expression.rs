@@ -947,25 +947,32 @@ impl<'a> Expression {
     }
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum LevelKind {
+    Block,
+    Loop,
+}
+
+#[derive(Debug, Clone)]
 pub enum ParsingContext {
-    Block {
-        block_depth: u32
+    Nested {
+        stack: Vec<LevelKind>
     }
 }
 
-fn build_block_statement_empty_type<'a>(iter: &mut impl Iterator<Item=Operator<'a>>, functions: &HashMap<u32, FunctionKind>, block_depth: u32) -> Result<Statement, ParserError<'a>> {
+fn build_block_statement_empty_type<'a>(iter: &mut impl Iterator<Item=Operator<'a>>, functions: &HashMap<u32, FunctionKind>, block_stack: &[LevelKind]) -> Result<Statement, ParserError<'a>> {
     Ok(Statement::Block(
-        statements_from_operators(iter, &functions, Some(ParsingContext::Block { block_depth }))?,
-        block_depth
+        statements_from_operators(iter, &functions, Some(ParsingContext::Nested { stack: block_stack.clone().into() }))?,
+        (block_stack.len() - 1) as _
     ))
 }
 
-// fn build_loop_statement_empty_type<'a>(iter: &mut impl Iterator<Item=Operator<'a>>, functions: &HashMap<u32, FunctionKind>, block_depth: u32) -> Result<Statement, ParserError<'a>> {
-//     Ok(Statement::Block(
-//         statements_from_operators(iter, &functions, Some(ParsingContext::Block { block_depth }))?,
-//         block_depth
-//     ))
-// }
+fn build_loop_statement_empty_type<'a>(iter: &mut impl Iterator<Item=Operator<'a>>, functions: &HashMap<u32, FunctionKind>, block_stack: &[LevelKind]) -> Result<Statement, ParserError<'a>> {
+    Ok(Statement::Loop(
+        statements_from_operators(iter, &functions, Some(ParsingContext::Nested { stack: block_stack.clone().into() }))?,
+        (block_stack.len() - 1) as _
+    ))
+}
 
 pub fn statements_from_operators<'a>(iter: &mut impl Iterator<Item=Operator<'a>>, functions: &HashMap<u32, FunctionKind>, parsing_context: Option<ParsingContext>) -> Result<Vec<Statement>, ParserError<'a>> {
     let mut exprs: Vec<Expression> = vec![];
@@ -981,10 +988,16 @@ pub fn statements_from_operators<'a>(iter: &mut impl Iterator<Item=Operator<'a>>
                 } => {
                     match ty {
                         BlockType::Empty => {
+                            let mut items = if let Some(ParsingContext::Nested { stack }) = parsing_context.clone() {
+                                stack
+                            } else {
+                                vec![]
+                            };
+                            items.push(LevelKind::Block);
                             stmts.push(build_block_statement_empty_type(
                                 iter,
                                 &functions,
-                                if let Some(ParsingContext::Block { block_depth }) = parsing_context { block_depth + 1 } else { 0 },
+                                &items,
                             )?);
                         },
                         BlockType::Type(_typ) => {
@@ -996,8 +1009,30 @@ pub fn statements_from_operators<'a>(iter: &mut impl Iterator<Item=Operator<'a>>
                     }
                 },
                 Operator::Loop {
-                    ..
-                } => return Err(ParserError::Unimplemented(op)),
+                    ty
+                } => {
+                    match ty {
+                        BlockType::Empty => {
+                            let mut items = if let Some(ParsingContext::Nested { stack }) = parsing_context.clone() {
+                                stack
+                            } else {
+                                vec![]
+                            };
+                            items.push(LevelKind::Loop);
+                            stmts.push(build_loop_statement_empty_type(
+                                iter,
+                                &functions,
+                                &items,
+                            )?);
+                        },
+                        BlockType::Type(_typ) => {
+                            return Err(ParserError::Unimplemented(op))
+                        },
+                        BlockType::FuncType(_index) => {
+                            return Err(ParserError::Unimplemented(op))
+                        },
+                    }
+                },
                 // Operator::If {
                 //     ty,
                 // } => return Err(ParserError::Unimplemented),
@@ -1015,16 +1050,29 @@ pub fn statements_from_operators<'a>(iter: &mut impl Iterator<Item=Operator<'a>>
                 //     relative_depth,
                 // } => return Err(ParserError::Unimplemented),
                 Operator::End => {
-                    match parsing_context {
-                        Some(ParsingContext::Block { .. }) | None => break,
+                    match &parsing_context {
+                        Some(ParsingContext::Nested { .. }) | None => break,
                         // _ => return Err(ParserError::Invalid { statements: stmts.clone(), expressions: exprs.clone(), operator: op })
                     }
                 },
                 Operator::Br {
                     relative_depth,
                 } => {
-                    if let Some(ParsingContext::Block { block_depth }) = parsing_context {
-                        stmts.push(Statement::Br { block_depth, relative_depth })
+                    if let Some(ParsingContext::Nested { stack }) = parsing_context.clone() {
+                        let block_depth = (stack.len() - 1) as u32;
+                        stmts.push(
+                            match stack.get((block_depth - relative_depth) as usize) {
+                                Some(LevelKind::Block) => {
+                                    Statement::Br { block_depth, relative_depth }
+                                }
+                                Some(LevelKind::Loop) => {
+                                    Statement::Continue { block_depth, relative_depth }
+                                },
+                                None => {
+                                    return Err(ParserError::Invalid { statements: stmts.clone(), expressions:exprs.clone(), operator: op })
+                                }
+                            }
+                        )
                     } else {
                         return Err(ParserError::Invalid { statements: stmts.clone(), expressions: exprs.clone(), operator: op })
                     }
@@ -1033,8 +1081,21 @@ pub fn statements_from_operators<'a>(iter: &mut impl Iterator<Item=Operator<'a>>
                     relative_depth,
                 } => {
                     if let Some(cond) = exprs.pop() {
-                        if let Some(ParsingContext::Block { block_depth }) = parsing_context {
-                            stmts.push(Statement::BrIf { cond, block_depth, relative_depth })
+                        if let Some(ParsingContext::Nested { stack }) = &parsing_context {
+                            let block_depth = (stack.len() - 1) as u32;
+                            stmts.push(
+                                match stack.get((block_depth - relative_depth) as usize) {
+                                    Some(LevelKind::Block) => {
+                                        Statement::BrIf { cond, block_depth, relative_depth }
+                                    }
+                                    Some(LevelKind::Loop) => {
+                                        Statement::ContinueIf { cond, block_depth, relative_depth }
+                                    },
+                                    None => {
+                                        return Err(ParserError::Invalid { statements: stmts.clone(), expressions:exprs.clone(), operator: op })
+                                    }
+                                }
+                            )
                         } else {
                             return Err(ParserError::Invalid { statements: stmts.clone(), expressions: exprs.clone(), operator: op })
                         }
@@ -1046,10 +1107,10 @@ pub fn statements_from_operators<'a>(iter: &mut impl Iterator<Item=Operator<'a>>
                     ref table,
                 } => {
                     if let Some(cond) = exprs.pop() {
-                        if let Some(ParsingContext::Block { block_depth }) = parsing_context {
+                        if let Some(ParsingContext::Nested { stack }) = parsing_context.clone() {
                             stmts.push(Statement::BrTable {
                                 cond,
-                                block_depth,
+                                stack,
                                 table: table.targets().collect::<Result<_, _>>().unwrap(),
                                 default: table.default()
                             })
@@ -1059,11 +1120,7 @@ pub fn statements_from_operators<'a>(iter: &mut impl Iterator<Item=Operator<'a>>
                     }
                 },
                 Operator::Return => {
-                    if let Some(expr) = exprs.pop() {
-                        stmts.push(Statement::Return(expr))
-                    } else {
-                        return Err(ParserError::Invalid { statements: stmts.clone(), expressions: exprs.clone(), operator: op })
-                    }
+                    stmts.push(Statement::Return(exprs.pop()))
                 },
                 Operator::Call {
                     function_index,

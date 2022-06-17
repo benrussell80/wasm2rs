@@ -1,10 +1,10 @@
-use crate::expression::Expression;
+use crate::expression::{Expression, LevelKind};
 
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub enum Statement {
     LocalSet(String, Expression),
-    Return(Expression),
+    Return(Option<Expression>),
     Unreachable,
     Nop,
     GlobalSet(String, Expression),
@@ -32,9 +32,18 @@ pub enum Statement {
     },
     BrTable {
         cond: Expression,
-        block_depth: u32,
+        stack: Vec<LevelKind>,
         table: Vec<u32>,
         default: u32,
+    },
+    Continue {
+        block_depth: u32,
+        relative_depth: u32,
+    },
+    ContinueIf {
+        cond: Expression,
+        block_depth: u32,
+        relative_depth: u32
     },
     RawRust(Vec<String>),
 }
@@ -49,7 +58,12 @@ impl Statement {
         let mut lines = vec![];
         match self {
             Self::LocalSet(index, expr) => lines.push(format!("{:indentation$}{} = {};", " ", index, expr.emit_code())),
-            Self::Return(expr) => lines.push(format!("{:indentation$}return {};", " ", expr.emit_code())),
+            Self::Return(expr) => {
+                match expr {
+                    Some(e) => lines.push(format!("{:indentation$}return {};", " ", e.emit_code())),
+                    None => lines.push(format!("{:indentation$}return;", " ")),
+                }
+            }
             Self::Unreachable => lines.push(format!("{:indentation$}unreachable!();", " ")),
             Self::Nop => lines.push(format!("{:indentation$};", " ")),
             Self::GlobalSet(index, expr) => lines.push(format!("{:indentation$}{} = {};", " ", index, expr.emit_code())),
@@ -204,16 +218,39 @@ impl Statement {
             Self::Br { block_depth, relative_depth } => {
                 lines.push(format!("{:indentation$}break 'B{};", " ", block_depth - relative_depth))
             },
-            Self::BrTable { cond, block_depth, table, default } => {
+            Self::BrTable { cond, stack, table, default } => {
                 lines.push(format!("{:indentation$}match {} {{", " ", cond.emit_code()));
 
                 for (i, relative_depth) in table.iter().enumerate() {
-                    lines.push(format!("{:indentation$}{i} => break 'B{},", " ", block_depth - relative_depth))
+                    let instruction = {
+                        let block_depth = stack.len() - 1;
+                        match stack.get(block_depth - *relative_depth as usize) {
+                            Some(LevelKind::Block) => "break",
+                            Some(LevelKind::Loop) => "continue",
+                            None => unreachable!()
+                        }
+                    };
+                    lines.push(format!("{:indentation$}{i} => {instruction} 'B{},", " ", (stack.len() - 1) as u32 - relative_depth))
                 }
 
-                lines.push(format!("{:indentation$}_ => break 'B{},", " ", block_depth - default));
+                let instruction = {
+                    let block_depth = stack.len() - 1;
+                    match stack.get(block_depth - *default as usize) {
+                        Some(LevelKind::Block) => "break",
+                        Some(LevelKind::Loop) => "continue",
+                        None => unreachable!()
+                    }
+                };
+
+                lines.push(format!("{:indentation$}_ => {instruction} 'B{},", " ", (stack.len() - 1) as u32 - default));
 
                 lines.push(format!("{:indentation$}}}", " "));
+            },
+            Self::Continue { block_depth, relative_depth } => {
+                lines.push(format!("{:indentation$}continue 'B{}", " ", block_depth - relative_depth));
+            },
+            Self::ContinueIf { cond, block_depth, relative_depth } => {
+                lines.push(format!("{:indentation$}if {} != 0 {{ continue 'B{} }}", " ", cond.emit_code(), block_depth - relative_depth));
             },
             Self::RawRust(raw_lines) => {
                 for raw_line in raw_lines.iter() {
